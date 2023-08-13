@@ -1,0 +1,338 @@
+---
+title: "Organizational Student Behavior"
+author: "Zuhal"
+date: "2023-08-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Exploration
+
+## Import Library and Dataset
+```{r, include = FALSE}
+library(tidyverse)
+library(Hmisc)
+library(corrplot)
+library(GGally)
+library(RColorBrewer)
+library(ggcorrplot)
+```
+
+```{r}
+df <- read_csv("Research Questionnaire.csv")
+head(df)
+```
+
+```{r}
+codebook <- read.csv("codebook.csv")
+codebook %>% as.list(codebook)
+```
+P1 = Organizational Climate
+P2 = Motivation
+P3 = Participation (Student participation in organization's activity)
+
+Rating Scale:
+Strongly Agree (5),	Agree (4), Neutral (3),	Disagree (2),	Strongly Disagree (1)
+
+```{r}
+table(df$Gender)
+table(df$Student_Year)
+```
+
+
+## Checking the Variables Correlation
+```{r}
+cor_df =round(cor(df[3:29]), 2)
+# check the values in matrix form
+# cor_df 
+cor_df1 <- as.data.frame(cor_df) 
+head(cor_df1)
+```
+
+```{r}
+df_score <- df[3:29]
+p_values <- rcorr(as.matrix(df_score))
+# Check if you need
+# p_values
+```
+
+```{r, fig.dim = c(15, 10)}
+corrplot(cor_df, method = "circle")
+```
+
+## Exploring Variable x1 (Organizational Climate) on x2 (Motivation) and y (Participation)
+
+Make a visualization function to get a better view of each variables correlation
+```{r}
+corrplot2 <- function(data,
+                      method = "pearson",
+                      sig.level = 0.05,
+                      order = "original",
+                      diag = FALSE,
+                      type = "upper",
+                      tl.srt = 90,
+                      number.font = 1,
+                      number.cex = 1,
+                      mar = c(0, 0, 0, 0)) {
+  library(corrplot)
+  data_incomplete <- data
+  data <- data[complete.cases(data), ]
+  mat <- cor(data, method = method)
+  cor.mtest <- function(mat, method) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+      for (j in (i + 1):n) {
+        tmp <- cor.test(mat[, i], mat[, j], method = method)
+        p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+      }
+    }
+    colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+    p.mat
+  }
+  p.mat <- cor.mtest(data, method = method)
+  col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+  corrplot(mat,
+    method = "color", col = col(200), number.font = number.font,
+    mar = mar, number.cex = number.cex,
+    type = type, order = order,
+    addCoef.col = "black", # add correlation coefficient
+    tl.col = "black", tl.srt = tl.srt, # rotation of text labels
+    # combine with significance level
+    p.mat = p.mat, sig.level = sig.level, insig = "blank",
+    # hide correlation coefficiens on the diagonal
+    diag = diag
+  )
+}
+```
+
+```{r}
+organizational_climate <- df_score[1:13]
+total_score <- df_score[26:27]
+organizational_climate <- cbind(organizational_climate, total_score)
+```
+
+```{r, fig.dim = c(15, 10)}
+# width = 15, height = 10
+corrplot2(
+    data = organizational_climate,
+    method = "pearson",
+    sig.level = 0.05,
+    order = "original",
+    diag = FALSE,
+    type = "upper",
+    tl.srt = 75
+)
+```
+Note: Corr value >= 0.45
+
+1. Organizational Climate (P1.2, P1.8, P1.9, P1.11, P1.12) to Motivation (P2_Total)
+
+2. Organizational Climate (P1.8, P1.12) to Participation (P3_Total)
+
+## Exploring Variables Indicators or Questions.
+
+```{r}
+subset_df <- data.frame()
+subset_df <- df[,c("Gender", "Student_Year", "P1.2", "P1.8", "P1.9", 
+                   "P1.11", "P1.12", "P2_Total", "P3_Total")]
+subset_df$Student_Year <- as.character(subset_df$Student_Year)
+head(subset_df)
+```
+```{r, fig.dim = c(18, 10)}
+#create scatterplot matrix
+ggpairs(subset_df[3:9])
+```
+
+If we focus on the graph, whatever the previous graphs shows that the Indicator P1.12 (one of the organizational climate indicators) has the higher correlation to the P2_Total (Overall Motivation Score) and P3_Total (Overall Participation Score). Thus, I will dive in these indicators.
+
+### Organization Climate on Motivation and Participation 
+
+P1.12 Statement: "I have an alignment of goal with organizational goals."
+
+```{r}
+glimpse(subset_df)
+```
+
+```{r, fig.dim = c(15, 10)}
+ggplot(subset_df, aes(x = P1.12, y = P2_Total)) +
+  geom_point(aes(size = 5, color = Student_Year)) + 
+  scale_color_brewer(palette="Dark2") +
+  labs(
+    title = "Goal alignment on Student Motivation in Organizational Activity",
+    subtitle = "Color - Student Year",
+    caption = "Source: Survey Data",
+    x = "Goal Allignment",
+    y = "Student Motivation in Organizational Activity"
+  ) + 
+  theme(
+    plot.title = element_text(color = "#0099f9", size = 20, face =  
+                              "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 13, face = "bold", hjust = 0.5),
+    plot.caption = element_text(face = "italic", hjust = 0)
+  )
+```
+
+```{r, fig.dim = c(15, 10)}
+ggplot(subset_df, aes(x = P1.12, y = P3_Total)) +
+  geom_point(aes(size = P3_Total, color = Student_Year)) + 
+  scale_color_brewer(palette="Dark2") +
+  labs(
+    title = "Goal alignment on Student Participation in Organizational Activity",
+    subtitle = "Color - Student Year",
+    caption = "Source: Survey Data",
+    x = "Goal Allignment",
+    y = "Student Participation in Organizational Activity"
+  ) + 
+  theme(
+    plot.title = element_text(color = "#0099f9", size = 20, face =  
+                              "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 13, face = "bold", hjust = 0.5),
+    plot.caption = element_text(face = "italic", hjust = 0)
+  )
+```
+
+
+```{r}
+p1.12 <- table(subset_df$P1.12)
+barplot(p1.12)
+```
+```{r, fig.dim = c(15, 10)}
+ggplot(subset_df, aes(x = P1.12, fill = Gender)) +
+  geom_bar() +
+  labs(title = "Goal Alignment by Generation Version 1",
+       caption = "Source: Survey Data", 
+       x = "Goal Alignment") +
+  facet_grid(~Student_Year)
+```
+
+```{r, fig.dim = c(15, 10)}
+ggplot(data = subset_df, aes(x = P1.12,  fill = Gender)) +
+  geom_bar(position = position_dodge(preserve = "single")) +
+  labs(
+    title = "Goal Alignment by Generation Version 2",
+    caption = "Source: Survey Data",
+    x = "Goal Allignment") + 
+  facet_grid(~Student_Year)
+```
+
+```{r, fig.dim = c(15, 10)}
+ggplot(data = subset_df, aes(x = P1.12,  fill = Student_Year)) +
+  geom_bar(position = position_dodge(preserve = "single")) +
+  labs(
+    title = "Goal Alignment by Gender",
+    caption = "Source: Survey Data",
+    x = "Goal Allignment") + 
+  facet_grid(~Gender)
+```
+
+```{r, fig.dim = c(15, 10)}
+ggplot(subset_df, aes(x= P2_Total))+ 
+  geom_histogram(aes(fill = Student_Year)) +
+  labs(
+    title = "The Histogram of Motivation by Generation",
+    caption = "Source: Survey Data",
+    x = "Student Motivation in Organizational Activity") +
+  facet_wrap(~P1.12, ncol = 1)
+``` 
+## Linear Regression
+
+### Linear Regression with Only Selected Variables
+
+```{r}
+# Fit the multiple linear regression model on variable y (Participation)
+participation_model = lm(formula = P3_Total ~ P1.2 + P1.8 + P1.9 + 
+                                P1.11 + P1.12, data = subset_df)
+```
+
+```{r}
+# Get the model residuals
+model_residuals = participation_model$residuals
+
+# Plot the result
+hist(model_residuals)
+```
+The graph looks like a bell curve
+
+```{r}
+# Plot the residuals
+qqnorm(model_residuals)
+# Plot the Q-Q line
+qqline(model_residuals)
+```
+From the plot, we can observe that almost all portions of the residuals lie in a straight line. Then we can assume that the residuals of the model follow a normal distribution.  
+
+Multicollinearity assumption check: 
+```{r, fig.dim = c(15, 10)}
+# Remove the Customer Value column
+reduced_data <- subset_df %>%  select(-c(Gender, Student_Year,
+                                            P2_Total, P3_Total))
+
+# Compute correlation at 2 decimal places
+corr_matrix = round(cor(reduced_data), 2)
+
+# Compute and show the  result
+ggcorrplot(corr_matrix, hc.order = TRUE, type = "lower",
+          lab = TRUE)
+```
+We can notice there is no strong correlations because all of the value is lower than 0.8.
+
+```{r}
+summary(participation_model)
+```
+The model has an adjusted R-square of 0.33 or 33% of the target variance can be explained by this model features.
+As we can see, our P1.12 indicators is the only significant variable. 
+
+### Linear Regression With All Variables
+
+```{r}
+# Fit the multiple linear regression model on variable y (Participation)
+participation_model2 = lm(formula = P3_Total ~ P1.1 + P1.2 + P1.3 + 
+                                P1.4 + P1.5 + P1.6 + P1.7 + P1.8 +
+                                P1.9 + P1.10 + P1.11 + P1.12,
+                                data = df)
+```
+
+```{r}
+# Get the model residuals
+model_residuals2 = participation_model2$residuals
+
+# Plot the result
+hist(model_residuals2)
+```
+
+```{r}
+# Plot the residuals
+qqnorm(model_residuals2)
+# Plot the Q-Q line
+qqline(model_residuals2)
+```
+```{r, fig.dim = c(15, 10)}
+# Remove the Customer Value column
+reduced_data2 <- df %>%  select(-c(Gender, Student_Year,
+                                   P1_Total, P2_Total, P3_Total))
+reduced_data2 <- reduced_data2 %>%  select(-c(14:24))
+
+# Compute correlation at 2 decimal places
+corr_matrix = round(cor(reduced_data2), 2)
+
+# Compute and show the  result
+ggcorrplot(corr_matrix, hc.order = TRUE, type = "lower",
+          lab = TRUE)
+```
+We can notice there is no strong correlations because all of the value is lower than 0.8.
+
+```{r}
+summary(participation_model2)
+```
+We still have P1.12 significant with additional indicator that is P1.8.
+However, our adjusted R-square a bit lower than the previous value 0.32.
+
+There are still a lot of various indicators that can be explored, especially those with codes P2 (Motivation) and P3 (Participation).
+
+# THANK YOU
