@@ -1,0 +1,739 @@
+---
+title: "Essential Sampling Methods Using R"
+author: "Zuhal"
+date: "2023-08-25"
+output:
+  html_document:
+   toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library and Dataset
+```{r, include=FALSE}
+library(tidyverse)
+library(survey)
+library(surveyplanning)
+library(QuantileNPCI)
+
+# Sometimes need this sequences installation to get sampling package
+#install.packages("MASS")
+#install.packages("lpSolve")
+#install.packages("sampling")
+library(sampling)
+
+df <- read_csv("Research Questionnaire.csv")
+```
+
+# Sampling Methods
+
+## Simple Random Sampling
+
+Random Sampling is one of the most popular and frequently used sampling methods. In a simple random sampling, every case in the population has an equal probability of getting selected in the sample.
+
+Strengths
+
+The selection of one element does not affect the selection of others.
+Each possible sample, of a given size, has an equal chance of being selected.
+Simple random samples tend to be good representations of the population.
+Requires little knowledge of the population.
+
+Weaknesses
+
+If there are small subgroups within the population, a SRS may not give an accurate representation of that subgroup. In fact, it may not include it at all! This is especially true if the sample size is small.
+If the population is large and widely dispersed, it can be costly (both in time and money) to collect the data.
+
+### SRS Without Replacement
+
+```{r}
+set.seed(10)
+srs <- sample(1:nrow(df), 42, replace=T)
+df.srs <- df %>% slice(srs)
+head(df.srs)
+```
+
+### SRS Without Replacement V2
+
+```{r}
+n <- 42
+N <- nrow(df)
+set.seed(314)
+units <- sample(N, size = n, replace = FALSE)
+df.srs2 <- df[units, ]
+head(df.srs2)
+```
+
+### SRS With Replacement
+
+```{r}
+set.seed(10)
+srs2 <- sample(1:nrow(df), 42, replace=T)
+```
+
+### Cumulative Distribution Function
+
+```{r}
+# This is the range of our x scale in cdf graph below
+max(df.srs2$P2_Total)
+min(df.srs2$P2_Total)
+```
+
+```{r}
+ggplot(df.srs2, mapping = aes(P2_Total)) +
+  stat_ecdf(geom = "step") +
+  scale_x_continuous(name = "Motivation Score") #+
+  #scale_y_continuous(name = "?")
+```
+### Quantiles
+The estimated CDF shows jumps of size 1/n ,so that the estimated population proportion can be larger than the desired proportion. The estimated population proportions therefore are often interpolated, for instance linearly. Function quantile of the stats package can be used to estimate a quantile. With argument type = 4 linear interpolation is used to estimate the quantiles.
+
+Function quantile actually computes sample quantiles, i.e., it assumes that the population units are selected with equal inclusion probabilities (as in simple random sampling), so that the estimators of the population proportions obtained are unbiased. With unequal inclusion probabilities these probabilities must be accounted for in estimating the population proportions
+```{r}
+quantile(df.srs2$P2_Total, probs = c(0.25, 0.5, 0.75), type = 4) %>%  round(1)
+```
+
+Package QuantileNPCI (N. Hutson, Hutson, and Yan 2019) can be used to compute a non-parametric confidence interval estimate of a quantile, using fractional order statistics (A. D. Hutson 1999). Parameter q specifies the proportion.
+```{r}
+quantCI(df.srs2$P2_Total, q = 0.5, alpha = 0.05, method = "exact")
+```
+
+### Sampling variance of estimator of population parameters
+
+Although there is no advantage in using package survey (Lumley 2021) to compute the π estimator and its standard error for this simple sampling design, we will do it for a better understanding of future explanation about cluster sampling.
+
+First, the sampling design that is used to select the sampling units is specified with function svydesign. The first argument specifies the sampling units. In this case, Formula or data frame specifying cluster ids from largest level to smallest level, ~0 or ~1 is a formula for no clusters. Argument probs specifies the inclusion probabilities of the sampling units. Alternatively, we may specify the weights with argument weights, which are in this case equal to the inverse of the inclusion probabilities. Variable pi is a column in tibble df.srs2, which is indicated with the tilde in probs = ~ pi.
+
+The population mean is then estimated with function svymean. The first argument is a formula specifying the study variable. Argument design specifies the sampling design.
+```{r}
+df.srs2$pi <- n / N
+design_srs <- svydesign(id = ~ 1, probs = ~ pi, data = df.srs2)
+svymean(~ P2_Total, design = design_srs)
+```
+
+For simple random sampling of finite populations without replacement, argument fpc is used to correct the standard error.
+```{r}
+df.srs2$N <- N
+design_srs_fpc <- svydesign(id = ~ 1, probs = ~ pi, 
+                            fpc = ~ N, data = df.srs2)
+svymean(~ P2_Total, design_srs_fpc)
+```
+
+Population totals can be estimated with function svytotal, quantiles with function svyquantile, and ratios of population totals with svyratio, to mention a few functions that will be used in following chapters.
+```{r}
+svyquantile(~ P2_Total, design_srs, quantile = c(0.5, 0.9))
+```
+
+The cumulative density function gives you the probability of a random variable being on or below a certain value. The quantile function is the opposite of that. i.e. you give it a probability and it tells you the random variable value. So the median is the value of the quantile at the probability value of 0.5. A quartile is the value of the quantile at the probabilities 0.25, 0.5 and 0.75. So, in general, you can use the quantile. The quartile is a special case.
+
+To understand Quantiles you need to understand the term “Percentile” first which will make your equation far more relevant.
+Percentile Basically says where do you lie in a Sorted List.
+
+For Example:
+x={x1,x2,x3……………….x50,x51,………………….x100}
+n = 100
+
+So the value at the 10th index in the sorted list gives the 10th percentile. What this percentile tells us is basically 10% of the values are less than this point and 90% of values are more than this point. The 50th percentile in this case will be known as the Median. If I tell you the (.01, 0.05, 0.10, 0.25, 0.5, 0.75, 0.90, 0.95 and 0.99) quantile, you will have a pretty good picture for most policy purposes.
+
+### Confidence Interval Estimate
+
+A second way of expressing our uncertainty about the estimated total, mean, or proportion is to present not merely a single number, but an interval. The wider the interval, the more uncertain we are about the estimate, and vice versa, the narrower the interval, the more confident we are.
+
+we can use method confint of package survey to compute the confidence interval.
+```{r}
+confint(svymean(~ P2_Total, design_srs), df = degf(design_srs),
+                level = 0.95)
+```
+Perspective from books:
+The interpretation of a confidence interval is not straightforward. A common misinterpretation is that if the 0.90 confidence interval estimate of the population mean equals [a,b], then the probability that the population mean is in this interval equals 0.90. In classical sampling theory, this cannot be a correct interpretation, because the population mean is not a random variable, and consequently the probability that the population mean is in an interval does not exist. However, the estimated bounds of the confidence interval are random variables, because the estimated population mean and also the estimated sampling variance vary among samples drawn with a probability sampling design. Therefore, it does make sense to attach a probability to this interval.
+
+## Systematic Sampling
+
+Systematic sampling is used in situations where the population data is an ordered list or is arranged in time. For eg, to analyze the average sales of a shop on all Sundays, systematic sampling can be used by choosing the average sales data of all the 7th day(Sunday) of the week to be included in the sample.
+```{r}
+df.ordered <- arrange(df, Student_Year)
+```
+
+```{r}
+getsys = function(N,n){
+  k = ceiling(N/n)
+  r = sample(1:k, 1)
+  seq(r, r + k*(n-1), k)
+}
+```
+
+```{r}
+set.seed(123)
+df.sys <- df.ordered[getsys(nrow(df.ordered), 42), ]
+head(df.sys)
+```
+
+## Stratified Sampling
+
+In stratified sampling, the population is divided into smaller subgroups based on some common factors that best describe the entire population like age, sex, income, etc. The groups thus formed are known as stratum/strata.
+
+For example, to analyze the amount of time spent by male and female users in sending messages per day, the strata could be taken as male and female users and random sampling can be used to select items within the male and female strata.
+
+A probability sample is selected by some sampling design. If these probability samples are selected by simple random sampling, as previously described, the design is stratified simple random sampling, that we will compute here. If sampling units are selected by cluster random sampling, then the design is stratified cluster random sampling.
+
+Note: Stratified sampling gives precise estimates compared to random sampling but the biggest disadvantage is that it requires knowledge of the appropriate characteristics of the population(the details of which are not always available), and it can be difficult to decide which characteristics to stratify by.
+```{r}
+# Using dplyr
+set.seed(7)
+df.stratified <- df %>%
+  group_by(Student_Year) %>%
+  sample_n(10)
+```
+
+```{r}
+table(df.stratified$P1.12) # P1.12 = They who have same goal with org
+```
+
+### Manual Computing for Proportional Stratified Sampling
+
+Formula: (sample size/population size) × stratum size
+```{r}
+count(filter(df.ordered, Student_Year == 2017)) 
+count(filter(df.ordered, Student_Year == 2018)) 
+count(filter(df.ordered, Student_Year == 2019)) 
+count(filter(df.ordered, Student_Year == 2020)) 
+#Formula, where we want 40 proportional sample from data set
+(40/84)*13 #2017
+(40/84)*26 #2018
+(40/84)*25 #2019
+(40/84)*20 #2020
+
+# Ideal Proportion
+6.190476 + 12.38095 + 11.90476 + 9.52381
+# Thus,
+# 6 for 2017, 12 for 2018, 12 for 2019, 10 for 2020
+```
+
+```{r}
+df2017 <- filter(df, Student_Year == 2017)
+srs2017 <- sample(1:nrow(df2017), 6)
+df2017 <- df2017 %>% slice(srs2017)
+
+df2018 <- filter(df, Student_Year == 2018)
+srs2018 <- sample(1:nrow(df2018), 12)
+df2018 <- df2018 %>% slice(srs2018)
+
+df2019 <- filter(df, Student_Year == 2019)
+srs2019 <- sample(1:nrow(df2019), 12)
+df2019 <- df2019 %>% slice(srs2019)
+
+df2020 <- filter(df, Student_Year == 2020)
+srs2020 <- sample(1:nrow(df2020), 10)
+df2020 <- df2020 %>% slice(srs2020)
+
+PSS <- rbind(df2017, df2018, df2019, df2020)
+head(PSS)
+```
+
+### Stratified Weighted Sampling
+
+The larger a stratum, the more units are selected from this stratum. The sizes of the strata, i.e., the total number of grid cells, are computed with function tapply.
+
+Note: Make sure your stratum has ordered and also in a char data type
+```{r}
+df.ordered$Student_Year <- as.character(df.ordered$Student_Year)
+N_h <- tapply(df.ordered$Student_Year, INDEX = df.ordered$Student_Year, FUN = length)
+w_h <- N_h / sum(N_h)
+n <- 40
+print(n_h <- round(n * w_h))
+```
+
+The results have same values as previous method.
+If the results is more than desired sample (40) you can reduce the largest stratum sample size as needed.
+```{r}
+#n_h[3] <- n_h[1] - 1 #reduce 1 sample from 2019 strata
+```
+
+The stratified simple random sample is selected with function strata of package sampling (Tillé and Matei 2021). Argument size specifies the stratum sample sizes.
+
+The stratum sample sizes must be in the order the strata are encountered in tibble grdVoorst, which is determined first with function unique.
+Within the strata, the grid cells are selected by simple random sampling with replacement (method = "srswr"), so that in principle more than one point can be selected within a grid cell. Function getdata extracts the observations of the selected units from the sampling frame, as well as the spatial coordinates and the stratum of these units. The coordinates of the centres of the selected grid cells are jittered by an amount equal to half the side of the grid cells. In the next code chunk, this is done with function mutate of package dplyr.
+```{r}
+ord <- unique(df.ordered$Student_Year)
+set.seed(314)
+units <- sampling::strata(df.ordered, stratanames = "Student_Year",
+                          size = n_h[ord], method = "srswor")
+df.stratified.v2 <- getdata(df.ordered, units) 
+```
+
+### Estimation of Population Parameters
+
+With simple random sampling within strata, the estimator of the population mean for simple random sampling (Equation (3.2)) is applied at the level of the strata. The estimated stratum means are then averaged, using the relative sizes or areas of the strata as weights
+For stratified simple random sampling with replacement of finite populations and stratified simple random sampling of infinite populations the fpcs 1−(nh/Nh) can be dropped.
+```{r}
+# m = mean
+# z = target variable = P2_Total = Motivation Variable
+# h = stratum
+# nh = the sample size of stratum h
+# Nh = the size of stratum h (total)
+# The inclusion probabilities differ among the strata and equal πk = nh/Nh for all k in stratum h
+# S2 = capital S squared (variance of a sample)
+
+# The estimated mean of each stratum h
+mz_h <- tapply(df.stratified.v2$P2_Total,
+               INDEX = df.stratified.v2$Student_Year,
+               FUN = mean)
+mz_h
+
+# The estimator of the population mean for simple random sampling is applied at the level of the strata. The estimated stratum means are then averaged, using the relative sizes or areas of the strata as weights
+mz <- sum(w_h * mz_h)
+mz
+
+# The estimated sample variance of z within each stratum h
+S2z_h <- tapply(df.stratified.v2$P2_Total,
+                INDEX = df.stratified.v2$Student_Year,
+                FUN = var)
+S2z_h
+
+# The estimated sampling variance of mean z in stratum h
+v_mz_h <- S2z_h / n_h
+v_mz_h 
+
+# Standard error of the mean
+se_mz <- sqrt(sum(w_h^2 * v_mz_h))
+se_mz
+
+```
+
+```{r}
+head(df.stratified.v2)
+```
+
+The population total is estimated first, and by dividing this estimated total by the total number of population units N an estimate of the population mean is obtained.
+```{r}
+# Estimate of the population mean
+tz <- sum(df.stratified.v2$P2_Total / df.stratified.v2$Prob)
+print(mz <- tz / sum(N_h))
+# Same value with previous computation
+```
+
+According to the book, sometimes the following case happen:
+The two estimates of the population mean are not exactly equal. This is due to rounding errors in the inclusion probabilities. This can be shown by computing the sum of the inclusion probabilities over all population units. This sum should be equal to the sample size n = 40, but as we can see below, this sum is slightly smaller.
+
+But in our case is exactly equal to 40.
+```{r}
+pi_h <- tapply(df.stratified.v2$Prob,
+               INDEX = df.stratified.v2$Student_Year,
+               FUN = unique)
+print(sum(pi_h * N_h))
+```
+
+Suppose we ignore that the sample data come from a stratified sampling design and we use the (unweighted) sample mean as an estimate of the population mean.
+```{r}
+print(mean(df.stratified.v2$P2_Total))
+```
+
+The sample mean slightly differs from the proper estimate of the population mean (19.67659). The sample mean is a biased estimator, but the bias is small. The bias is only small because the stratum sample sizes are about proportional to the sizes of the strata, so that the inclusion probabilities (sampling intensities) are about equal for all strata
+
+That is why when our stratum sample size are not equal or having a big difference of values, we must include weight in our computation.
+
+Estimating population mean and its standard error with package survey (Lumley 2021). Note that the stratum weights Nh/nh must be passed to function svydesign using argument weight. 
+These are first attached to data.frame df.stratified.v2 by creating a look-up table lut, which is then merged with function merge to data.frame df.stratified.v2.
+```{r}
+# Compute weight
+labels <- sort(unique(df.stratified.v2$Student_Year))
+lut <- data.frame(stratum = labels, weight = N_h / n_h)
+colnames(lut)[1] <- "Student_Year"
+df.stratified.v2 <- merge(x = df.stratified.v2, y = lut,
+                          by = "Student_Year")
+```
+
+```{r}
+design_stratified <- svydesign(
+  id = ~ 1, strata = ~ Stratum,
+  weight = ~ weight,
+  data = df.stratified.v2)
+svymean(~ P2_Total, design_stratified)
+```
+
+### Quantile
+
+```{r}
+svyquantile(~ P2_Total, design_stratified, quantile = c(0.5, 0.8))
+```
+
+### The Population Variance
+
+The population variance can be estimated with function s2 of package surveyplanning (Breidaks, Liberts, and Jukams 2020). However, this function is an implementation of an alternative, consistent estimator of the population variance (Särndal, Swensson, and Wretman 1992):
+
+An estimator is consistent if it converges in probability to the true value of the parameter as the sample size tends to infinity (Särndal, Swensson, and Wretman 1992).
+```{r}
+S2z <- s2(df.stratified.v2$P2_Total, w = df.stratified.v2$weight)
+S2z
+```
+
+### Design Effect
+
+```{r}
+v_mz_SI <- S2z / n
+res <- svymean(~ P2_Total, design_stratified)
+SE(res)^2 / v_mz_SI
+```
+
+or
+
+```{r}
+svymean(~ P2_Total, design_stratified, deff = "replace")
+```
+
+Note: Stratified simple random sampling with proportional allocation (Section 4.3) is more precise than simple random sampling when the sum of squares of the stratum means is larger than the sum of squares within strata (Lohr 1999):
+
+### Confidence Interval Estimate
+
+A confidence interval estimate of the population mean can be extracted 
+with method confint of package survey. It uses n − H degrees of freedom.
+```{r}
+res <- svymean(~ P2_Total, design_stratified)
+df.stratified.ci <- degf(design_stratified)
+confint(res, df = df.stratified.ci, level = 0.95)
+```
+
+### Allocation of Sample Size to Strata
+
+After we have decided on the total sample size n, we must decide how to apportion the units to the strata. It is reasonable to allocate more sampling units to large strata and fewer to small strata. The simplest way to achieve this is proportional allocation
+
+the costs of sampling may differ among the strata. It can be relatively expensive to sample nearly inaccessible strata, and we do not want to sample many units there. This leads to optimal allocation, with ch the costs per sampling unit in stratum h. Optimal means that given the total costs this allocation type leads to minimum sampling variance, with c0 overhead costs. So, the more variable a stratum and the lower the costs, the more units will be selected from this stratum.
+```{r}
+S2z_h <- tapply(X = df$P2_Total, INDEX = df$Student_Year, FUN = var)
+n_h_Neyman <- round(n * N_h * sqrt(S2z_h) / sum(N_h * sqrt(S2z_h)))
+n_h_Neyman
+```
+
+These optimal sample sizes can also be computed with function optsize of package surveyplanning
+```{r}
+labels <- sort(unique(df.stratified.v2$Stratum))
+res <- optsize(labels, n, N_h, S2z_h)
+round(res$nh, 0)
+```
+
+There can be two reasons for stratifying the population:
+1. we are interested in the mean or total per stratum; or
+2. we want to increase the precision of the estimated mean or total for the entire population.
+
+## Cluster Sampling
+
+Cluster sampling is a sampling method used when natural groups are evident in the population. The clusters should all be similar each other: each cluster should be a small scale representation of the population. To take a cluster sample, a random sample of the clusters is chosen. The elements of the randomly chosen clusters make up the sample.
+
+There are a couple of differences between stratified and cluster sampling:
+
+In a stratified sample, the differences between stratum are high while the differences within strata are low. In a cluster sample, the differences between clusters are low while the differences within clusters are high.
+
+In a stratified sample, a simple random sample is chosen from each stratum. So, all of the stratum are represented, but not all of the elements in each stratum are in the sample . In a cluster sample, a simple random sample of clusters is chosen. So, not all of the clusters are represented, but all elements from the chosen clusters are in the sample.
+
+Strengths
+
+Makes it possible to sample if there is no list of the entire population, but there is a list of subpopulations. For example, there is not a list of all faculties members in the Hasanuddin university. However, there is a list of faculty that you could sample and then acquire the members list from each of the selected faculties.
+
+Weaknesses
+
+Not always representative of the population. Elements within clusters tend to be similar to one another based on some characteristic(s). This can lead to over-representation or under-representation of those characteristics in the sample.
+
+### Clusters Selected with Probabilities Proportional to Size, Without Replacement
+
+The advantage of sampling with replacement is that this keeps the statistical inference simple, more specifically the estimation of the standard error of the estimator of the population mean. However, in sampling from finite populations, cluster sampling with replacement is less efficient than cluster sampling without replacement, especially with large sampling fractions of clusters, i.e., if 1 − n / N is small, with N being the total number of clusters and n the sample size, i.e., the number of cluster draws. If a cluster is selected more than once, there is less information about the population mean in this sample than in a sample with all clusters different. Selection of clusters with probabilities proportional to size without replacement (ppswor) is not straightforward.
+
+The problem is the computation of the inclusion probabilities of the clusters. After we have selected a first cluster, we must adapt the sum of the sizes of the N − 1 remaining clusters and recompute the selection probabilities of the remaining clusters in the second draw, function UPpivotal is used to select a cluster random sample with ppswor
+```{r}
+df$Student_Year <- as.character(df$Student_Year)
+# M_cl = Count of people in each cluster (we use student year as cluster)
+M_cl <- tapply(df$P2_Total, INDEX = df$Student_Year, FUN = length)
+n <- 3 # we need many cluster to have a good experience, but our data has only posses 4 category as cluster 
+M <- nrow(df) # 84
+pi <- n * M_cl / M
+eps <- 1e-6
+sampleind <- UPpivotal(pik = pi)
+clusters <- sort(unique(df$Student_Year))
+clusters_sampled <- clusters[sampleind == 1]
+df.cluster <- df[df$Student_Year %in% clusters_sampled, ]
+```
+
+Estimation of the sampling variance in pps sampling of clusters without replacement is difficult3. A simple solution is to treat the cluster sample as a ppswr sample and to estimate the variance with Equation (6.7). With small sampling fractions, this variance approximation is fine: the overestimation of the variance is negligible. For larger sampling fractions, various alternative variance approximations are developed, see Berger (2004) for details. One of the methods is Brewer’s method, which is implemented in function svydesign.
+```{r}
+names(pi) <- clusters
+df.cluster$pi <- pi[df.cluster$Student_Year]
+design_clppswor <- svydesign(
+  id = ~ Student_Year, data = df.cluster,
+  pps = "brewer", probs = ~ pi, fpc = ~ pi)
+svymean(~ P2_Total, design_clppswor)
+```
+
+Another variance estimator implemented in function svydesign is the Hartley-Rao estimator. The two estimated standard errors are nearly equal.
+```{r}
+# The n make the se differ, use proper/better data when compute this sampling method.
+p2sum <- sum((n * M_cl[df.cluster$Student_Year] / M)^2) / n
+design_hr <- svydesign(
+  id = ~ Student_Year,  data = df.cluster,
+  pps = HR(p2sum), probs = ~ pi, fpc = ~ pi)
+svymean(~ P2_Total, design_hr)
+```
+
+### Simple Random Sampling of Clusters
+
+Suppose the clusters have unequal size, but we do not know the size of the clusters, so that we cannot select the clusters with probabilities proportional to their size. In this case, we may select the clusters by simple random sampling without replacement. The inclusion probability of a cluster equals n / N with n the number of selected clusters and N the total number of clusters in the population.
+
+The π estimator and the ratio estimator are equal when the clusters are selected with probabilities proportional to size. This is because the estimated population size is equal to the true population size.
+```{r}
+print(M_HT <- sum(1 / df.cluster$pi))
+# It should be equal to 51, but it does not.
+```
+
+However, when clusters of different size are selected with equal probabilities, the two estimators are different. This is shown below. Six clusters are selected by simple random sampling without replacement.
+```{r}
+set.seed(314)
+clusters <- sort(unique(df$Student_Year))
+units_cl <- sample(length(clusters), size = n, replace = FALSE)
+clusters_sampled.srs <- clusters[units_cl]
+df.cluster.srs <- df[df$Student_Year %in% clusters_sampled, ]
+```
+
+The π estimate and the ratio estimate of the population mean are computed for the selected sample.
+```{r}
+N <- length(clusters)
+N
+
+df.cluster.srs$pi <- n / N
+
+tz_HT <- sum(df.cluster.srs$P2_Total / df.cluster.srs$pi)
+tz_HT
+
+mz_HT <- tz_HT / M
+mz_HT
+
+M_HT <- sum(1 / df.cluster.srs$pi)
+M_HT
+
+mz_ratio <- tz_HT / M_HT
+mz_ratio
+```
+
+The π estimate of the population mean can also be computed by first computing totals of clusters
+```{r}
+tz_cluster <- tapply(df.cluster.srs$P2_Total,
+                     INDEX = df.cluster.srs$Student_Year, FUN = sum)
+pi_cluster <- n / N
+tz_HT <- sum(tz_cluster / pi_cluster)
+print(mz_HT <- tz_HT / M)
+```
+
+The variance of the π estimator of the population mean can be estimated by first estimating the variance of the estimator of the total, and dividing this variance by the squared number of population units
+```{r}
+fpc <- 1 - n / N
+
+v_tz <- N^2 * fpc * var(tz_cluster) / n
+v_tz
+
+se_mz_HT <- sqrt(v_tz / M^2)
+se_mz_HT
+```
+
+```{r}
+m_M_cl <- mean(M_cl[unique(df.cluster.srs$Student_Year)])
+m_M_cl
+
+b <- mean(tz_cluster) / m_M_cl
+b
+
+e_cl <- tz_cluster - b * M_cl[sort(unique(df.cluster.srs$Student_Year))]
+e_cl
+
+S2e <- var(e_cl)
+S2e
+
+print(se_mz_ratio <- sqrt(fpc * 1 / m_M_cl^2 * S2e / n))
+```
+
+To compute the variance of the ratio estimator of the population mean, can also be computed with function svymean of package survey, which also provides an estimate of the standard error of the estimated mean
+```{r}
+design_SIC <- svydesign(
+  id = ~ Student_Year, probs = ~ pi, fpc = ~ pi, data = df.cluster.srs)
+svymean(~ P2_Total, design_SIC)
+```
+
+## Several Convenient Way 
+
+### Select Random PSU
+```{r}
+set.seed(212)
+#randomly choose 2 student years out of the 4
+cclusters <- sample(unique(df$Student_Year), size=2, replace=F)
+
+#define sample as all members who belong to one of the 4 student years
+cluster_sample <- df[df$Student_Year %in% cclusters, ]
+
+#view how many customers came from each cluster
+table(cluster_sample$Student_Year)
+```
+
+### Estimating Mean, Variance, and Confidence Interval of Stratified dataset
+
+```{r}
+tv <- read.table("tvhour_per_area.txt", header = TRUE)
+```
+
+```{r}
+y <- tv$Hour
+stratum <- tv$Area
+table(stratum)
+```
+
+Mean and variance across stratum
+```{r}
+tapply(y,stratum,mean)
+tapply(y,stratum,var)
+```
+
+Sample size, mean and SD for strata 1
+```{r}
+y1<-y[stratum==1]
+
+n1=length(y1)
+paste("Sample Size =",  n1)
+
+y1_bar=mean(y1)
+paste("Mean =",  y1_bar)
+
+s1=sd(y1)
+paste("Standar Deviation =",  s1)
+```
+
+Sample size, mean and SD for strata 2
+```{r}
+y2<-y[stratum==2]
+
+n2=length(y2)
+paste("Sample Size =",  n2)
+
+y2_bar=mean(y2)
+paste("Mean =",  y2_bar)
+
+s2=sd(y2)
+paste("Standar Deviation =",  s2)
+```
+
+Sample size, mean and SD for strata 3
+```{r}
+y3<-y[stratum==3]
+
+n3=length(y3)
+paste("Sample Size =",  n3)
+
+y3_bar=mean(y3)
+paste("Mean =",  y3_bar)
+
+s3=sd(y3)
+paste("Standar Deviation =",  s3)
+```
+
+Notation
+L = the number of strata
+Nh = number of units in each stratum h
+nh = the number of samples taken from stratum h
+N = the total number of units in the population, i.e., N1 + N2 + ... + NL
+
+L = 3, 
+N1 = 155 households in town A, 
+N2 = 62 households in town B, 
+N3= 93 households in rural C, 
+N = 155 + 62 + 93 = 310
+
+We decides to select 20 households from Town A, 8 households from Town B, and 12 households from the rural area
+
+n1 = 20
+n2 = 8
+n3 = 12
+
+```{r}
+N1 = 155
+N2 = 62
+N3 = 93
+N = N1 + N2 + N3
+```
+
+
+Mean estimation
+```{r}
+y_bar=(N1*y1_bar+N2*y2_bar+N3*y3_bar)/N
+y_bar
+```
+
+Variance for mean
+```{r}
+Var_ybar=((N1/N)^2)*((N1-n1)/N1)*(s1^2)/n1+((N2/N)^2)*((N2-n2)/N2)*(s2^2)/n2+((N3/N)^2)*((N3-n3)/N3)*(s3^2)/n3
+Var_ybar
+```
+
+Total Estimation and its variance
+```{r}
+tau_hat=N*y_bar
+paste("Total Estimation= ", tau_hat)
+Var_tau=(N^2)*Var_ybar
+paste("Total Variance= ", Var_tau)
+```
+
+Degree of freedom
+```{r}
+a1=N1*(N1-n1)/n1
+a2=N2*(N2-n2)/n2
+a3=N3*(N3-n3)/n3
+d=((a1*(s1^2)+a2*(s2^2)+a3*(s3^2))^2)/(((a1*(s1^2))^2)/(n1-1)+((a2*(s2^2))^2)/(n2-1)+((a3*(s3^2))^2)/(n3-1))
+d 
+#because d=21.089, we round it down and set it as 21
+round(d)
+```
+
+Confidence interval for mean and total estimation (95%)
+```{r}
+CI95_ybar=y_bar+(Var_ybar^0.5)*qt(c(.025,.975),round(d))
+print("95% Confidence Interval of Mean") 
+CI95_ybar
+
+x <- "\n"
+writeLines(x)
+
+CI95_tau=tau_hat+(Var_tau^0.5)*qt(c(.025,.975),round(d))
+print("95% Confidence Interval of Total Estimation")
+CI95_tau
+```
+
+## Summary for Consideration
+
+#### Simple Random Sampling
+Example: We want to conduct an experimental trial in a small population such as: employees in a company, or students in a college. We include everyone in a list and use a random number generator to select the participants
+
+Advantages: results can be generalized by random sampling, the sampling frame is the whole population, every participant has an equal probability of being selected
+
+Disadvantages: Less precise than stratified method, less representative than the systematic method
+
+#### Systematic Sampling
+Example: Every nth patient entering the out-patient clinic is selected and included in our sample
+
+Advantages: More feasible than simple or stratified methods, sampling frame is not always required
+
+Disadvantages: Generalisability may decrease if baseline characteristics repeat across every nth participant
+
+#### Stratified Sampling
+Example: We have a big population (a city) and we want to ensure representativeness of all groups with a pre-determined characteristic such as: age groups, ethnic origin, and gender
+
+Advantages: Inclusive of strata (subgroups), reliable and generalisable results
+
+Disadvantages: Does not work well with multiple variables
+
+#### Cluster Sampling
+Example: 10 schools have the same number of students across the county. We can randomly select 3 out of 10 schools as our clusters
+
+Advantages: Readily doable with most budgets, does not require a sampling frame
+
+Disadvantages: Results may not be reliable nor generalisable
+
+#### Note 
+These codes have been reproduced from many books and websites, which I then adjusted with my own data.
+
+The clustering method might be better if I used proper data that contained natural variables of cluster and strata, but I chose to play with my own data.
+
+# Thank You
